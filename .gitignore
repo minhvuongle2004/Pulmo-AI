@@ -1,0 +1,30 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyTorch Checkpoints and Weights
+*.pth
+*.pt
+*.ckpt
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Kaggle / Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# OS generated files
+.DS_Store
+Thumbs.db
