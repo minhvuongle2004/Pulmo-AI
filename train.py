@@ -73,7 +73,15 @@ def main():
     print(f"Initializing Dataset with Image Size {args.image_size}x{args.image_size}...")
     dataset = VolumeDataset(data_dir=args.data_dir, csv_file=args.csv_path, is_nlst=args.is_nlst, target_size=(args.image_size, args.image_size))
     
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=2)
+    # Tối ưu hóa DataLoader: tăng num_workers, thêm pin_memory để copy thẳng dữ liệu vào RAM GPU, thêm prefetch_factor
+    dataloader = DataLoader(
+        dataset, 
+        batch_size=args.batch_size, 
+        shuffle=True, 
+        num_workers=4, 
+        pin_memory=True,
+        prefetch_factor=2
+    )
     
     # 3. Khởi tạo Trái tim Dự án (End-to-End)
     print("Initializing End-to-End Model...")
