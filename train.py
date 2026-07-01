@@ -8,7 +8,7 @@ import time
 from utils.dataset import VolumeDataset
 from models.end2end_pipeline import EndToEndModel
 
-def train_one_epoch(model, dataloader, optimizer, criterion, scaler, device, epoch):
+def train_one_epoch(model, dataloader, optimizer, criterion, scaler, device, epoch, max_batches=None):
     model.train()
     running_loss = 0.0
     correct_preds = 0
@@ -44,7 +44,10 @@ def train_one_epoch(model, dataloader, optimizer, criterion, scaler, device, epo
         
         print(f"  [Epoch {epoch}] Batch {batch_idx+1}/{len(dataloader)} - Loss: {loss.item():.4f}")
         
-
+        if max_batches and (batch_idx + 1) >= max_batches:
+            print(f"Reached max_batches ({max_batches}). Ending epoch early to save checkpoint.")
+            break
+            
 
     epoch_loss = running_loss / total_samples if total_samples > 0 else 0
     epoch_acc = correct_preds / total_samples if total_samples > 0 else 0
@@ -65,6 +68,7 @@ def main():
     parser.add_argument('--sybil_dropout', type=float, default=0.2, help='Dropout rate for Sybil classifier')
     parser.add_argument('--image_size', type=int, default=256, help='Image resolution (e.g. 128 or 256)')
     parser.add_argument('--resume_checkpoint', type=str, default=None, help='Path to .pth checkpoint to resume training')
+    parser.add_argument('--max_batches', type=int, default=None, help='Max batches per epoch to force early checkpoint saving')
     args = parser.parse_args()
 
     # 1. Cấu hình phần cứng
@@ -117,7 +121,7 @@ def main():
     # 5. Vòng lặp Huấn luyện
     print("STARTING TRAINING...")
     for epoch in range(start_epoch, args.epochs + 1):
-        train_one_epoch(model, dataloader, optimizer, criterion, scaler, device, epoch)
+        train_one_epoch(model, dataloader, optimizer, criterion, scaler, device, epoch, max_batches=args.max_batches)
         
         # Lưu Checkpoint chống Timeout trên Kaggle
         checkpoint_path = f"checkpoint_epoch_{epoch}.pth"
