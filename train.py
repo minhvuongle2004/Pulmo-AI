@@ -70,7 +70,7 @@ def main():
     print(f"Using device: {device}")
     
     print("Initializing Dataset...")
-    dataset = VolumeDataset(data_dir=args.data_dir, is_nlst=args.is_nlst, target_size=(256, 256))
+    dataset = VolumeDataset(data_dir=args.data_dir, csv_file=args.csv_path, is_nlst=args.is_nlst, target_size=(256, 256))
     
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=2)
     
