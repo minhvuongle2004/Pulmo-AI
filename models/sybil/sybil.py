@@ -14,8 +14,25 @@ class SybilNet(nn.Module):
         self.hidden_dim = 512
 
         # 3D ResNet-18 pretrained để trích xuất đặc trưng hình khối 3D
-        encoder = torchvision.models.video.r3d_18(pretrained=True)
+        encoder = torchvision.models.video.r3d_18(weights='DEFAULT')
         self.image_encoder = nn.Sequential(*list(encoder.children())[:-2])
+        
+        # [SỬA ĐỔI LỚN]: Sửa lớp tích chập đầu tiên để nhận ảnh y tế (1 kênh màu thay vì 3 kênh RGB)
+        # Lấy lớp Conv3d gốc ra
+        original_conv = self.image_encoder[0][0]
+        # Tạo lớp mới với in_channels=1
+        new_conv = nn.Conv3d(
+            in_channels=1, 
+            out_channels=original_conv.out_channels,
+            kernel_size=original_conv.kernel_size,
+            stride=original_conv.stride,
+            padding=original_conv.padding,
+            bias=False
+        )
+        # Khởi tạo trọng số bằng cách cộng dồn 3 kênh màu cũ (để không làm mất tri thức pretrained)
+        new_conv.weight.data = original_conv.weight.data.sum(dim=1, keepdim=True)
+        # Lắp lớp mới vào mô hình
+        self.image_encoder[0][0] = new_conv
 
         self.pool = MultiAttentionPool()
 
