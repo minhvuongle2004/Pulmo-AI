@@ -63,14 +63,15 @@ def main():
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate for AdamW')
     parser.add_argument('--weight_decay', type=float, default=1e-5, help='Weight decay for regularization')
     parser.add_argument('--sybil_dropout', type=float, default=0.2, help='Dropout rate for Sybil classifier')
+    parser.add_argument('--image_size', type=int, default=256, help='Image resolution (e.g. 128 or 256)')
     args = parser.parse_args()
 
     # 1. Cấu hình phần cứng
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
-    print("Initializing Dataset...")
-    dataset = VolumeDataset(data_dir=args.data_dir, csv_file=args.csv_path, is_nlst=args.is_nlst, target_size=(256, 256))
+    print(f"Initializing Dataset with Image Size {args.image_size}x{args.image_size}...")
+    dataset = VolumeDataset(data_dir=args.data_dir, csv_file=args.csv_path, is_nlst=args.is_nlst, target_size=(args.image_size, args.image_size))
     
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=2)
     
