@@ -78,13 +78,13 @@ def main():
     print(f"Initializing Dataset with Image Size {args.image_size}x{args.image_size}...")
     dataset = VolumeDataset(data_dir=args.data_dir, csv_file=args.csv_path, is_nlst=args.is_nlst, target_size=(args.image_size, args.image_size))
     
-    # Tối ưu hóa DataLoader: tăng num_workers, thêm pin_memory để copy thẳng dữ liệu vào RAM GPU, thêm prefetch_factor
+    # Tối ưu hóa DataLoader: Giảm num_workers và tắt pin_memory để tránh lỗi tràn RAM (OOM) sau nhiều giờ chạy
     dataloader = DataLoader(
         dataset, 
         batch_size=args.batch_size, 
         shuffle=True, 
-        num_workers=4, 
-        pin_memory=True,
+        num_workers=2, 
+        pin_memory=False,
         prefetch_factor=2
     )
     
