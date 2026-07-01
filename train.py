@@ -44,33 +44,32 @@ def train_one_epoch(model, dataloader, optimizer, criterion, scaler, device, epo
         
         print(f"  [Epoch {epoch}] Batch {batch_idx+1}/{len(dataloader)} - Loss: {loss.item():.4f}")
         
-        # Trong lúc test local (RTX 3050), chỉ chạy 1 batch rồi break để xem code có lỗi không
-        # Khi lên Kaggle sẽ comment dòng break này lại
-        print(f"  -> Successfully ran 1 Batch locally, breaking to avoid OOM.")
-        break 
+
 
     epoch_loss = running_loss / total_samples if total_samples > 0 else 0
     epoch_acc = correct_preds / total_samples if total_samples > 0 else 0
     print(f"Epoch {epoch} finished in {time.time() - start_time:.2f}s | Loss: {epoch_loss:.4f} | Acc: {epoch_acc:.4f}")
     return epoch_loss
 
+import argparse
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--data_dir', type=str, required=True, help='Path to Kaggle dataset directory')
+    parser.add_argument('--csv_path', type=str, required=False, help='Path to NLST CSV')
+    parser.add_argument('--is_nlst', action='store_true', help='Use NLST dataset')
+    parser.add_argument('--epochs', type=int, default=5, help='Number of epochs')
+    parser.add_argument('--batch_size', type=int, default=2, help='Batch size per GPU')
+    args = parser.parse_args()
+
     # 1. Cấu hình phần cứng
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
-    # 2. Chuẩn bị Dữ liệu (Dùng tạm NLST hoặc AAPM cho test vòng lặp)
-    # LƯU Ý: Anh cần đổi đường dẫn CSV này khớp với máy anh nhé
-    data_dir = r"d:\cothuy\3Truc\National Lung Screening Trial (NLST)"
-    csv_path = r"d:\cothuy\3Truc\National Lung Screening Trial (NLST)\nodule_location_globAttCRNN.csv"
-    
-    # Do NLST anh tải về chưa cấu trúc xong, em test tạm bằng AAPM (đã có sẵn) để lấy 1 batch
-    test_dir = r"d:\cothuy\3Truc\AAPM-Mayo Clinic\LDCT-and-Projection-data"
     print("Initializing Dataset...")
-    dataset = VolumeDataset(data_dir=test_dir, is_nlst=False, target_size=(256, 256))
+    dataset = VolumeDataset(data_dir=args.data_dir, is_nlst=args.is_nlst, target_size=(256, 256))
     
-    # Batch_size = 1 do GPU 3050 chỉ có 4GB-8GB VRAM
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=0)
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=2)
     
     # 3. Khởi tạo Trái tim Dự án (End-to-End)
     print("Initializing End-to-End Model...")
@@ -92,9 +91,9 @@ def main():
     # Scaler cho Mixed Precision
     scaler = GradScaler()
     
-    # 5. Vòng lặp Huấn luyện (Chạy thử 1 Epoch)
+    # 5. Vòng lặp Huấn luyện
     print("STARTING TRAINING...")
-    for epoch in range(1, 2):
+    for epoch in range(1, args.epochs + 1):
         train_one_epoch(model, dataloader, optimizer, criterion, scaler, device, epoch)
         
         # Lưu Checkpoint chống Timeout trên Kaggle
