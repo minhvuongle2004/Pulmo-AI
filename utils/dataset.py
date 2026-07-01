@@ -111,10 +111,6 @@ class VolumeDataset(Dataset):
         # 4. Áp dụng Lung Window và chuẩn hóa về [0, 1]
         lung_volume = self._window_image(hu_volume)
         
-        # Dọn rác giải phóng RAM ngay lập tức để tránh tràn bộ nhớ khi chạy lâu
-        del slices
-        del hu_volume
-        
         # 5. Đổi shape thành Tensor: [Channel=1, Depth, Height, Width]
         tensor_volume = torch.tensor(lung_volume, dtype=torch.float32).unsqueeze(0).unsqueeze(0) # [1, 1, D, H, W] để đưa vào interpolate
         
@@ -131,6 +127,10 @@ class VolumeDataset(Dataset):
             series_uid = slices[0].SeriesInstanceUID
             label = float(self.labels.get(series_uid, 0.0))
             
+        # Dọn rác giải phóng RAM ngay lập tức để tránh tràn bộ nhớ khi chạy lâu
+        del slices
+        del hu_volume
+        
         return resized_volume, torch.tensor([label], dtype=torch.float32)
 
 # --- KHỐI TEST THỬ BẰNG CPU TRÊN MÁY ANH ---
