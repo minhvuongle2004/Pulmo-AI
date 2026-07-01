@@ -58,8 +58,11 @@ def main():
     parser.add_argument('--data_dir', type=str, required=True, help='Path to Kaggle dataset directory')
     parser.add_argument('--csv_path', type=str, required=False, help='Path to NLST CSV')
     parser.add_argument('--is_nlst', action='store_true', help='Use NLST dataset')
-    parser.add_argument('--epochs', type=int, default=5, help='Number of epochs')
+    parser.add_argument('--epochs', type=int, default=50, help='Number of epochs')
     parser.add_argument('--batch_size', type=int, default=2, help='Batch size per GPU')
+    parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate for AdamW')
+    parser.add_argument('--weight_decay', type=float, default=1e-5, help='Weight decay for regularization')
+    parser.add_argument('--sybil_dropout', type=float, default=0.2, help='Dropout rate for Sybil classifier')
     args = parser.parse_args()
 
     # 1. Cấu hình phần cứng
@@ -73,7 +76,7 @@ def main():
     
     # 3. Khởi tạo Trái tim Dự án (End-to-End)
     print("Initializing End-to-End Model...")
-    model = EndToEndModel(corediff_context=True, sybil_dropout=0.2)
+    model = EndToEndModel(corediff_context=True, sybil_dropout=args.sybil_dropout)
     
     # --- KỸ THUẬT KAGGLE MULTI-GPU ---
     # Nếu máy có nhiều hơn 1 GPU (Kaggle có 2xT4), tự động chia đôi Batch Size chạy song song
@@ -86,7 +89,7 @@ def main():
     # 4. Định nghĩa Loss và Optimizer
     # Do Sybil trả về logit, ta dùng BCEWithLogitsLoss cho bài toán Binary Classification
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     
     # Scaler cho Mixed Precision
     scaler = GradScaler()
