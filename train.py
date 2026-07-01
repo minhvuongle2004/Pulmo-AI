@@ -64,6 +64,7 @@ def main():
     parser.add_argument('--weight_decay', type=float, default=1e-5, help='Weight decay for regularization')
     parser.add_argument('--sybil_dropout', type=float, default=0.2, help='Dropout rate for Sybil classifier')
     parser.add_argument('--image_size', type=int, default=256, help='Image resolution (e.g. 128 or 256)')
+    parser.add_argument('--resume_checkpoint', type=str, default=None, help='Path to .pth checkpoint to resume training')
     args = parser.parse_args()
 
     # 1. Cấu hình phần cứng
@@ -103,9 +104,19 @@ def main():
     # Scaler cho Mixed Precision
     scaler = GradScaler()
     
+    # Tính năng Resume Training
+    start_epoch = 1
+    if args.resume_checkpoint and os.path.exists(args.resume_checkpoint):
+        print(f"Resuming training from checkpoint: {args.resume_checkpoint}")
+        checkpoint = torch.load(args.resume_checkpoint, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        print(f"Loaded successfully. Will start from epoch {start_epoch}")
+    
     # 5. Vòng lặp Huấn luyện
     print("STARTING TRAINING...")
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(start_epoch, args.epochs + 1):
         train_one_epoch(model, dataloader, optimizer, criterion, scaler, device, epoch)
         
         # Lưu Checkpoint chống Timeout trên Kaggle
