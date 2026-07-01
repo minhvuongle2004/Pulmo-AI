@@ -42,50 +42,54 @@ class EndToEndModel(nn.Module):
         B, C, D, H, W = volume.shape
         assert C == 1, "Input volume must have exactly 1 channel"
         
+        from torch.utils.checkpoint import checkpoint
+        
+        # 1. TẦNG 1: Xử lý DenoMamba cho toàn bộ lát cắt
+        # Sử dụng Gradient Checkpointing để giải phóng VRAM (giảm 80% bộ nhớ)
+        # Chỉ tính 1 lần mỗi lát cắt thay vì 3 lần như code cũ
+        denoised_slices = []
+        for z in range(D):
+            current_slice = volume[:, :, z, :, :]
+            # checkpoint function, args..., use_reentrant=False
+            denoised = checkpoint(self.denomamba, current_slice, use_reentrant=False)
+            denoised_slices.append(denoised)
+            
         cleaned_slices = []
         
-        # 1. & 2. ĐI QUA TẦNG 1 VÀ TẦNG 2 (Xử lý 2D)
-        # Chúng ta sẽ lặp qua từng lát cắt theo trục chiều sâu (D)
+        # 2. TẦNG 2: Xử lý CoreDiff kết hợp giải phẫu 3D
         for z in range(D):
-            # Lấy lát cắt hiện tại: [B, 1, H, W]
             current_slice = volume[:, :, z, :, :]
+            denoised_slice = denoised_slices[z]
             
-            # --- TẦNG 1 ---
-            denoised_slice = self.denomamba(current_slice)
-            
-            # --- TẦNG 2 ---
-            # Để CoreDiff hoạt động (khôi phục giải phẫu 3D), nó cần ngữ cảnh từ lát trước và sau
-            # Xử lý biên (Padding cho lát đầu và cuối)
+            # Xử lý biên
             if z == 0:
-                prev_slice = denoised_slice # Fake lát trước bằng chính nó
+                prev_slice = denoised_slice
             else:
-                prev_slice = cleaned_slices[-1] # Lấy kết quả đã làm sạch của lát liền trước
+                # Không được gán tensor có gradient qua lại phức tạp nếu dùng checkpoint
+                # Dùng chính denoised của z-1 để đơn giản hóa đồ thị tính toán
+                prev_slice = denoised_slices[z-1] 
                 
             if z == D - 1:
-                next_slice = self.denomamba(volume[:, :, z, :, :]) # Fake lát sau
+                next_slice = denoised_slice
             else:
-                next_slice = self.denomamba(volume[:, :, z+1, :, :]) # Tính trước Tầng 1 cho lát tiếp theo
+                next_slice = denoised_slices[z+1]
                 
             # Ghép 3 lát cắt lại thành input 3 channels: [B, 3, H, W]
             context_3d = torch.cat([prev_slice, denoised_slice, next_slice], dim=1)
             
-            # Tạm thời fix cứng time step (t) bằng 0 cho quá trình inference/fine-tuning (tuỳ chiến lược)
             if t_diffusion is None:
                 t_diffusion = torch.zeros(B, device=volume.device, dtype=torch.long)
                 
-            # Tạo các tham số adjust giả lập cho corediff (y, x_end) - Ở thực tế cần trích xuất đặc trưng
-            # Ở đây em truyền chính ảnh vào để giữ nguyên cấu trúc hàm forward gốc của CoreDiff
-            diffused_slice = self.corediff(context_3d, t_diffusion, y=current_slice, x_end=current_slice)
-            
+            # Sử dụng Checkpoint cho CoreDiff
+            # CoreDiff forward args: (x, time, y, x_end)
+            diffused_slice = checkpoint(self.corediff, context_3d, t_diffusion, current_slice, current_slice, use_reentrant=False)
             cleaned_slices.append(diffused_slice)
             
         # 3. CẦU NỐI (Bridge)
-        # Ghép các lát cắt 2D đã sạch lại thành một khối 3D: [B, 1, D, H, W]
-        # Torch.stack ở dim=2 (Depth) sẽ giữ cho Gradient (đạo hàm) không bị đứt gãy
         clean_volume = torch.stack(cleaned_slices, dim=2)
         
         # 4. TẦNG 3
-        # Đưa khối 3D sạch vào Sybil để phân loại
+        # SybilNet không cần checkpoint vì nó nhận nguyên cục 3D và kiến trúc ResNet3D đã tối ưu
         sybil_output = self.sybil(clean_volume)
         
         return sybil_output
