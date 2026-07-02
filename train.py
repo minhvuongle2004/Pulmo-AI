@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.cuda.amp import GradScaler, autocast
 import time
+import gc
 import numpy as np
 from sklearn.metrics import roc_auc_score
 
@@ -46,10 +47,14 @@ def train_one_epoch(model, dataloader, optimizer, criterion, scaler, device, epo
         
         print(f"  [Epoch {epoch}] Batch {batch_idx+1}/{len(dataloader)} - Loss: {loss.item():.4f}")
         
+        
         if max_batches and (batch_idx + 1) >= max_batches:
             print(f"Reached max_batches ({max_batches}). Ending epoch early to save checkpoint.")
             break
             
+        # Ép dọn rác thủ công sau mỗi 10 batch để tránh phình RAM trên Kaggle
+        if (batch_idx + 1) % 10 == 0:
+            gc.collect()
 
     epoch_loss = running_loss / total_samples if total_samples > 0 else 0
     epoch_acc = correct_preds / total_samples if total_samples > 0 else 0
@@ -122,22 +127,20 @@ def main():
     train_dataset = VolumeDataset(data_dir=args.data_dir, csv_file=args.csv_path, is_nlst=args.is_nlst, target_size=(args.image_size, args.image_size), split='train', val_ratio=args.val_ratio)
     val_dataset = VolumeDataset(data_dir=args.data_dir, csv_file=args.csv_path, is_nlst=args.is_nlst, target_size=(args.image_size, args.image_size), split='val', val_ratio=args.val_ratio)
     
-    # Tối ưu hóa DataLoader: Giảm num_workers và tắt pin_memory để tránh lỗi tràn RAM (OOM) sau nhiều giờ chạy
+    # Tối ưu hóa DataLoader: Set num_workers=0 để triệt tiêu hoàn toàn lỗi rò rỉ RAM (OOM) của PyTorch
     train_loader = DataLoader(
         train_dataset, 
         batch_size=args.batch_size, 
         shuffle=True, 
-        num_workers=2, 
-        pin_memory=False,
-        prefetch_factor=2
+        num_workers=0, 
+        pin_memory=False
     )
     val_loader = DataLoader(
         val_dataset, 
         batch_size=args.batch_size, 
         shuffle=False, 
-        num_workers=2, 
-        pin_memory=False,
-        prefetch_factor=2
+        num_workers=0, 
+        pin_memory=False
     )
     
     # 3. Khởi tạo Trái tim Dự án (End-to-End)
@@ -200,7 +203,10 @@ def main():
                 'optimizer_state_dict': optimizer.state_dict(),
                 'val_auc': val_auc
             }, best_path)
-            print(f"*** New Best Model Saved with AUC: {val_auc:.4f} ***")
+        
+        # Dọn rác tổng sau mỗi Epoch
+        gc.collect()
+        torch.cuda.empty_cache()
 
 if __name__ == '__main__':
     main()
