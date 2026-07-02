@@ -88,6 +88,10 @@ def validate(model, dataloader, criterion, device, epoch):
             all_probs.extend(probs.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
             
+            del volumes, labels, outputs, logits, loss, probs, preds
+            if (batch_idx + 1) % 10 == 0:
+                gc.collect()
+            
     val_loss = running_loss / total_samples if total_samples > 0 else 0
     val_acc = correct_preds / total_samples if total_samples > 0 else 0
     
@@ -180,18 +184,18 @@ def main():
     for epoch in range(start_epoch, args.epochs + 1):
         train_one_epoch(model, train_loader, optimizer, criterion, scaler, device, epoch, max_batches=args.max_batches)
         
-        # Chấm điểm Validation
-        val_loss, val_acc, val_auc = validate(model, val_loader, criterion, device, epoch)
-        
-        # Lưu Checkpoint chống Timeout trên Kaggle
+        # Lưu Checkpoint NGAY SAU KHI TRAIN xong (Phòng hờ lúc Validation bị sập RAM thì vẫn giữ được tiến độ)
         checkpoint_path = f"checkpoint_epoch_{epoch}.pth"
         torch.save({
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'val_auc': float(val_auc)
+            'val_auc': 0.0 # Tạm thời để 0.0, best_model sẽ lưu AUC thực
         }, checkpoint_path)
-        print(f"Saved checkpoint to {checkpoint_path}")
+        print(f"Saved checkpoint to {checkpoint_path} before validation")
+        
+        # Chấm điểm Validation
+        val_loss, val_acc, val_auc = validate(model, val_loader, criterion, device, epoch)
         
         # Lưu lại bản best model
         if val_auc > best_val_auc:

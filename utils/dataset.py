@@ -193,6 +193,8 @@ class VolumeDataset(Dataset):
         # Dọn rác giải phóng RAM ngay lập tức để tránh tràn bộ nhớ khi chạy lâu
         del slices
         del hu_volume
+        del tensor_volume
+        del lung_volume
         
         return resized_volume, torch.tensor([label], dtype=torch.float32)
 
