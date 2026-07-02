@@ -4,6 +4,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.cuda.amp import GradScaler, autocast
 import time
+import numpy as np
+from sklearn.metrics import roc_auc_score
 
 from utils.dataset import VolumeDataset
 from models.end2end_pipeline import EndToEndModel
@@ -54,6 +56,46 @@ def train_one_epoch(model, dataloader, optimizer, criterion, scaler, device, epo
     print(f"Epoch {epoch} finished in {time.time() - start_time:.2f}s | Loss: {epoch_loss:.4f} | Acc: {epoch_acc:.4f}")
     return epoch_loss
 
+def validate(model, dataloader, criterion, device, epoch):
+    model.eval()
+    running_loss = 0.0
+    correct_preds = 0
+    total_samples = 0
+    
+    all_labels = []
+    all_probs = []
+    
+    with torch.no_grad():
+        for batch_idx, (volumes, labels) in enumerate(dataloader):
+            volumes, labels = volumes.to(device), labels.to(device)
+            
+            outputs = model(volumes)
+            logits = outputs['logit']
+            loss = criterion(logits, labels)
+            
+            running_loss += loss.item() * volumes.size(0)
+            
+            probs = torch.sigmoid(logits)
+            preds = (probs > 0.5).float()
+            correct_preds += (preds == labels).sum().item()
+            total_samples += labels.size(0)
+            
+            all_probs.extend(probs.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+            
+    val_loss = running_loss / total_samples if total_samples > 0 else 0
+    val_acc = correct_preds / total_samples if total_samples > 0 else 0
+    
+    all_probs = np.array(all_probs).flatten()
+    all_labels = np.array(all_labels).flatten()
+    
+    val_auc = 0.0
+    if len(np.unique(all_labels)) > 1:
+        val_auc = roc_auc_score(all_labels, all_probs)
+        
+    print(f"--> [Validation Epoch {epoch}] Loss: {val_loss:.4f} | Acc: {val_acc:.4f} | AUC: {val_auc:.4f}")
+    return val_loss, val_acc, val_auc
+
 import argparse
 
 def main():
@@ -69,20 +111,30 @@ def main():
     parser.add_argument('--image_size', type=int, default=256, help='Image resolution (e.g. 128 or 256)')
     parser.add_argument('--resume_checkpoint', type=str, default=None, help='Path to .pth checkpoint to resume training')
     parser.add_argument('--max_batches', type=int, default=None, help='Max batches per epoch to force early checkpoint saving')
+    parser.add_argument('--val_ratio', type=float, default=0.2, help='Validation split ratio')
     args = parser.parse_args()
 
     # 1. Cấu hình phần cứng
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
-    print(f"Initializing Dataset with Image Size {args.image_size}x{args.image_size}...")
-    dataset = VolumeDataset(data_dir=args.data_dir, csv_file=args.csv_path, is_nlst=args.is_nlst, target_size=(args.image_size, args.image_size))
+    print(f"Initializing Train/Val Dataset with Image Size {args.image_size}x{args.image_size}...")
+    train_dataset = VolumeDataset(data_dir=args.data_dir, csv_file=args.csv_path, is_nlst=args.is_nlst, target_size=(args.image_size, args.image_size), split='train', val_ratio=args.val_ratio)
+    val_dataset = VolumeDataset(data_dir=args.data_dir, csv_file=args.csv_path, is_nlst=args.is_nlst, target_size=(args.image_size, args.image_size), split='val', val_ratio=args.val_ratio)
     
     # Tối ưu hóa DataLoader: Giảm num_workers và tắt pin_memory để tránh lỗi tràn RAM (OOM) sau nhiều giờ chạy
-    dataloader = DataLoader(
-        dataset, 
+    train_loader = DataLoader(
+        train_dataset, 
         batch_size=args.batch_size, 
         shuffle=True, 
+        num_workers=2, 
+        pin_memory=False,
+        prefetch_factor=2
+    )
+    val_loader = DataLoader(
+        val_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=False, 
         num_workers=2, 
         pin_memory=False,
         prefetch_factor=2
@@ -110,18 +162,23 @@ def main():
     
     # Tính năng Resume Training
     start_epoch = 1
+    best_val_auc = 0.0
     if args.resume_checkpoint and os.path.exists(args.resume_checkpoint):
         print(f"Resuming training from checkpoint: {args.resume_checkpoint}")
         checkpoint = torch.load(args.resume_checkpoint, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
+        best_val_auc = checkpoint.get('val_auc', 0.0)
         print(f"Loaded successfully. Will start from epoch {start_epoch}")
     
     # 5. Vòng lặp Huấn luyện
     print("STARTING TRAINING...")
     for epoch in range(start_epoch, args.epochs + 1):
-        train_one_epoch(model, dataloader, optimizer, criterion, scaler, device, epoch, max_batches=args.max_batches)
+        train_one_epoch(model, train_loader, optimizer, criterion, scaler, device, epoch, max_batches=args.max_batches)
+        
+        # Chấm điểm Validation
+        val_loss, val_acc, val_auc = validate(model, val_loader, criterion, device, epoch)
         
         # Lưu Checkpoint chống Timeout trên Kaggle
         checkpoint_path = f"checkpoint_epoch_{epoch}.pth"
@@ -129,8 +186,21 @@ def main():
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
+            'val_auc': val_auc
         }, checkpoint_path)
         print(f"Saved checkpoint to {checkpoint_path}")
+        
+        # Lưu lại bản best model
+        if val_auc > best_val_auc:
+            best_val_auc = val_auc
+            best_path = "best_model.pth"
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'val_auc': val_auc
+            }, best_path)
+            print(f"*** New Best Model Saved with AUC: {val_auc:.4f} ***")
 
 if __name__ == '__main__':
     main()

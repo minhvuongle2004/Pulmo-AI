@@ -12,26 +12,89 @@ class VolumeDataset(Dataset):
     Nhiệm vụ: Đọc toàn bộ ảnh DICOM của 1 bệnh nhân, sắp xếp theo trục Z, 
     chuyển sang hệ số HU (Hounsfield Unit), và nén thành Tensor 3D.
     """
-    def __init__(self, data_dir, csv_file=None, is_nlst=True, target_size=(256, 256)):
+    def __init__(self, data_dir, csv_file=None, is_nlst=True, target_size=(256, 256), split='all', val_ratio=0.2, seed=42):
         """
         Args:
             data_dir: Đường dẫn đến thư mục chứa dữ liệu (NLST hoặc AAPM).
             csv_file: File CSV chứa nhãn (chỉ dùng cho NLST).
             is_nlst: True nếu đang load bộ NLST (có nhãn Ung thư), False nếu load AAPM.
             target_size: Kích thước [Height, Width] muốn scale ảnh về (default 256x256 để đỡ tốn VRAM).
+            split: 'train', 'val', hoặc 'all'
+            val_ratio: Tỷ lệ bệnh nhân dành cho tập Validation (mặc định 20%)
+            seed: Cố định ngẫu nhiên để đảm bảo việc chia tập không bị thay đổi qua các lần chạy
         """
         self.data_dir = data_dir
         self.is_nlst = is_nlst
         self.target_size = target_size
         
         # Lấy danh sách các thư mục chứa series ảnh của từng bệnh nhân
-        # Tạm thời ta lấy tất cả thư mục cấp thấp nhất chứa file .dcm
-        self.series_paths = self._find_dicom_series_dirs(data_dir)
+        all_series_paths = self._find_dicom_series_dirs(data_dir)
         
         if self.is_nlst and csv_file:
             self.labels = self._load_labels(csv_file)
+            if split != 'all':
+                self.series_paths = self._stratified_split(all_series_paths, split, val_ratio, seed)
+            else:
+                self.series_paths = all_series_paths
         else:
             self.labels = None
+            if split != 'all':
+                self.series_paths = self._random_split(all_series_paths, split, val_ratio, seed)
+            else:
+                self.series_paths = all_series_paths
+
+    def _stratified_split(self, series_paths, split, val_ratio, seed):
+        """Chia đều tỷ lệ bệnh nhân Ung thư cho cả Train và Val bằng cách đọc nhanh Metadata"""
+        import random
+        pos_paths = []
+        neg_paths = []
+        
+        print("Đang quét siêu dữ liệu (Metadata) để chia tập Train/Val (Stratified Split)...")
+        for path in series_paths:
+            dcm_files = glob.glob(os.path.join(path, '*.dcm'))
+            if not dcm_files: continue
+            
+            # Đọc nhanh file đầu tiên (chỉ đọc Header, bỏ qua Pixel để tiết kiệm 99% thời gian)
+            first_dcm = pydicom.dcmread(dcm_files[0], stop_before_pixels=True)
+            uid = first_dcm.SeriesInstanceUID
+            label = float(self.labels.get(uid, 0.0))
+            
+            if label == 1.0:
+                pos_paths.append(path)
+            else:
+                neg_paths.append(path)
+                
+        # Cố định ngẫu nhiên
+        random.seed(seed)
+        random.shuffle(pos_paths)
+        random.shuffle(neg_paths)
+        
+        # Chia theo tỷ lệ
+        pos_val_size = max(1, int(len(pos_paths) * val_ratio)) if pos_paths else 0
+        neg_val_size = max(1, int(len(neg_paths) * val_ratio)) if neg_paths else 0
+        
+        if split == 'val':
+            final_paths = pos_paths[:pos_val_size] + neg_paths[:neg_val_size]
+        else: # train
+            final_paths = pos_paths[pos_val_size:] + neg_paths[neg_val_size:]
+            
+        random.shuffle(final_paths)
+        print(f"-> Tập {split.upper()} có {len(final_paths)} bệnh nhân (Ung thư: {len([p for p in final_paths if p in pos_paths])}).")
+        return final_paths
+
+    def _random_split(self, series_paths, split, val_ratio, seed):
+        import random
+        random.seed(seed)
+        paths_copy = list(series_paths)
+        random.shuffle(paths_copy)
+        
+        val_size = int(len(paths_copy) * val_ratio)
+        if split == 'val':
+            final_paths = paths_copy[:val_size]
+        else:
+            final_paths = paths_copy[val_size:]
+        print(f"-> Tập {split.upper()} có {len(final_paths)} bệnh nhân.")
+        return final_paths
 
     def _find_dicom_series_dirs(self, root_dir):
         """Hàm đệ quy tìm tất cả các thư mục chứa file DICOM"""
