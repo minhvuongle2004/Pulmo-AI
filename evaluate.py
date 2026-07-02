@@ -1,5 +1,6 @@
 import argparse
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 from sklearn.metrics import roc_auc_score, confusion_matrix, accuracy_score
 import numpy as np
