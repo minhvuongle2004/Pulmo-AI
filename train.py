@@ -135,21 +135,22 @@ def main():
     train_dataset = VolumeDataset(data_dir=args.data_dir, csv_file=args.csv_path, is_nlst=args.is_nlst, target_size=(args.image_size, args.image_size), split='train', val_ratio=args.val_ratio)
     val_dataset = VolumeDataset(data_dir=args.data_dir, csv_file=args.csv_path, is_nlst=args.is_nlst, target_size=(args.image_size, args.image_size), split='val', val_ratio=args.val_ratio)
     
-    # num_workers=0 để tránh deadlock giữa các tiến trình Worker trên Kaggle
-    # Cơ chế tắt/bật Python sau mỗi Epoch đã đảm bảo RAM luôn sạch rồi
+    # num_workers=2 an toàn sau khi JIT warm-up được chạy trước bằng Cell 2
     train_loader = DataLoader(
         train_dataset, 
         batch_size=args.batch_size, 
         shuffle=True, 
-        num_workers=0,
-        pin_memory=False
+        num_workers=2,
+        pin_memory=False,
+        prefetch_factor=2
     )
     val_loader = DataLoader(
         val_dataset, 
         batch_size=args.batch_size, 
         shuffle=False, 
-        num_workers=0,
-        pin_memory=False
+        num_workers=2,
+        pin_memory=False,
+        prefetch_factor=2
     )
     
     # 3. Khởi tạo Trái tim Dự án (End-to-End)
