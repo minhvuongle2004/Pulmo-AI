@@ -47,7 +47,7 @@ def train_one_epoch(model, dataloader, optimizer, criterion, scaler, device, epo
         correct_preds += (preds == labels).sum().item()
         total_samples += labels.size(0)
         
-        print(f"  [Epoch {epoch}] Batch {batch_idx+1}/{len(dataloader)} - Loss: {loss.item():.4f}")
+        print(f"  [Epoch {epoch}] Batch {batch_idx+1}/{len(dataloader)} - Loss: {loss.item():.4f}", flush=True)
         
         
         if max_batches and (batch_idx + 1) >= max_batches:
