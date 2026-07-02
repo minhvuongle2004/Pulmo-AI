@@ -6,6 +6,8 @@ from torch.cuda.amp import GradScaler, autocast
 import time
 import gc
 import numpy as np
+import glob
+import re
 from sklearn.metrics import roc_auc_score
 
 from utils.dataset import VolumeDataset
@@ -121,6 +123,8 @@ def main():
     parser.add_argument('--resume_checkpoint', type=str, default=None, help='Path to .pth checkpoint to resume training')
     parser.add_argument('--max_batches', type=int, default=None, help='Max batches per epoch to force early checkpoint saving')
     parser.add_argument('--val_ratio', type=float, default=0.2, help='Validation split ratio')
+    parser.add_argument('--auto_resume', action='store_true', help='Automatically find and resume from the latest checkpoint')
+    parser.add_argument('--epochs_per_run', type=int, default=None, help='Exit after this many epochs (useful for freeing RAM in a bash loop)')
     args = parser.parse_args()
 
     # 1. Cấu hình phần cứng
@@ -170,6 +174,17 @@ def main():
     # Tính năng Resume Training
     start_epoch = 1
     best_val_auc = 0.0
+    
+    if args.auto_resume:
+        checkpoints = glob.glob("checkpoint_epoch_*.pth")
+        if checkpoints:
+            def extract_epoch(f):
+                match = re.search(r'checkpoint_epoch_(\d+).pth', f)
+                return int(match.group(1)) if match else -1
+            latest_cp = max(checkpoints, key=extract_epoch)
+            args.resume_checkpoint = latest_cp
+            print(f"[Auto Resume] Detected latest checkpoint: {latest_cp}")
+
     if args.resume_checkpoint and os.path.exists(args.resume_checkpoint):
         print(f"Resuming training from checkpoint: {args.resume_checkpoint}")
         checkpoint = torch.load(args.resume_checkpoint, map_location=device, weights_only=False)
@@ -211,6 +226,12 @@ def main():
         # Dọn rác tổng sau mỗi Epoch
         gc.collect()
         torch.cuda.empty_cache()
+        
+        if args.epochs_per_run:
+            args.epochs_per_run -= 1
+            if args.epochs_per_run <= 0:
+                print("Đã hoàn thành số lượng Epoch quy định cho lần chạy này. Chủ động tắt Python để hệ điều hành giải phóng 100% RAM.")
+                break
 
 if __name__ == '__main__':
     main()
