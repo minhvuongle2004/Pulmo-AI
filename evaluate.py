@@ -105,8 +105,20 @@ def main():
     # 3. Nạp Checkpoint
     print(f"Đang nạp bộ nhớ từ: {args.checkpoint}")
     checkpoint = torch.load(args.checkpoint, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    print(f"Đã nạp thành công Checkpoint (từ Epoch {checkpoint['epoch']}).")
+    
+    # Sửa lỗi DataParallel: Tự động loại bỏ chữ 'module.' khỏi tên biến nếu checkpoint được train bằng nhiều GPU
+    state_dict = checkpoint['model_state_dict']
+    new_state_dict = {}
+    for k, v in state_dict.items():
+        name = k[7:] if k.startswith('module.') else k
+        new_state_dict[name] = v
+        
+    model.load_state_dict(new_state_dict)
+    print(f"Đã nạp thành công Checkpoint (từ Epoch {checkpoint.get('epoch', 'N/A')}).")
+    
+    # Tăng tốc độ Inference bằng cách bật lại DataParallel nếu có > 1 GPU
+    if torch.cuda.device_count() > 1:
+        model = nn.DataParallel(model)
     
     # 4. Chấm điểm
     evaluate(model, dataloader, device)
