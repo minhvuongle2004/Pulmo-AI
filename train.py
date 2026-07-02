@@ -168,7 +168,7 @@ def main():
     best_val_auc = 0.0
     if args.resume_checkpoint and os.path.exists(args.resume_checkpoint):
         print(f"Resuming training from checkpoint: {args.resume_checkpoint}")
-        checkpoint = torch.load(args.resume_checkpoint, map_location=device)
+        checkpoint = torch.load(args.resume_checkpoint, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
@@ -189,7 +189,7 @@ def main():
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'val_auc': val_auc
+            'val_auc': float(val_auc)
         }, checkpoint_path)
         print(f"Saved checkpoint to {checkpoint_path}")
         
@@ -201,7 +201,7 @@ def main():
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
-                'val_auc': val_auc
+                'val_auc': float(val_auc)
             }, best_path)
         
         # Dọn rác tổng sau mỗi Epoch

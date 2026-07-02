@@ -105,7 +105,7 @@ def main():
     
     # 3. Nạp Checkpoint
     print(f"Đang nạp bộ nhớ từ: {args.checkpoint}")
-    checkpoint = torch.load(args.checkpoint, map_location=device)
+    checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
     
     # Sửa lỗi DataParallel: Tự động loại bỏ chữ 'module.' khỏi tên biến nếu checkpoint được train bằng nhiều GPU
     state_dict = checkpoint['model_state_dict']
