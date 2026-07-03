@@ -26,6 +26,7 @@ class VolumeDataset(Dataset):
         self.data_dir = data_dir
         self.is_nlst = is_nlst
         self.target_size = target_size
+        self.split = split  # Lưu lại split để áp dụng Augmentation chỉ cho Train
         
         # Lấy danh sách các thư mục chứa series ảnh của từng bệnh nhân
         all_series_paths = self._find_dicom_series_dirs(data_dir)
@@ -190,11 +191,22 @@ class VolumeDataset(Dataset):
             series_uid = slices[0].SeriesInstanceUID
             label = float(self.labels.get(series_uid, 0.0))
             
-        # Dọn rác giải phóng RAM ngay lập tức để tránh tràn bộ nhớ khi chạy lâu
-        del slices
-        del hu_volume
-        del tensor_volume
-        del lung_volume
+        # Augmentation: Chỉ áp dụng cho tập Train, không đụng vào Val
+        if self.split == 'train':
+            import random
+            import torch.nn.functional as F
+            
+            # 1. Lật ngược trái-phải ngẫu nhiên (50% xác suất)
+            if random.random() > 0.5:
+                resized_volume = torch.flip(resized_volume, dims=[-1])  # Lật theo trục Width
+            
+            # 2. Lật trước-sau ngẫu nhiên (50% xác suất)
+            if random.random() > 0.5:
+                resized_volume = torch.flip(resized_volume, dims=[-2])  # Lật theo trục Height
+            
+            # 3. Tăng giảm độ sáng ngẫu nhiên nhẹ (±15%)
+            brightness_factor = random.uniform(0.85, 1.15)
+            resized_volume = torch.clamp(resized_volume * brightness_factor, 0.0, 1.0)
         
         return resized_volume, torch.tensor([label], dtype=torch.float32)
 

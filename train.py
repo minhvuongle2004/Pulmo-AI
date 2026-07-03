@@ -116,9 +116,9 @@ def main():
     parser.add_argument('--is_nlst', action='store_true', help='Use NLST dataset')
     parser.add_argument('--epochs', type=int, default=50, help='Number of epochs')
     parser.add_argument('--batch_size', type=int, default=2, help='Batch size per GPU')
-    parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate for AdamW')
-    parser.add_argument('--weight_decay', type=float, default=1e-5, help='Weight decay for regularization')
-    parser.add_argument('--sybil_dropout', type=float, default=0.2, help='Dropout rate for Sybil classifier')
+    parser.add_argument('--learning_rate', type=float, default=5e-5, help='Learning rate for AdamW')
+    parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay for regularization')
+    parser.add_argument('--sybil_dropout', type=float, default=0.4, help='Dropout rate for Sybil classifier')
     parser.add_argument('--image_size', type=int, default=256, help='Image resolution (e.g. 128 or 256)')
     parser.add_argument('--resume_checkpoint', type=str, default=None, help='Path to .pth checkpoint to resume training')
     parser.add_argument('--max_batches', type=int, default=None, help='Max batches per epoch to force early checkpoint saving')
@@ -170,6 +170,10 @@ def main():
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     
+    # CosineAnnealingLR: Giảm dần Learning Rate theo hình sin xuống tới LR_min=1e-6 trong suốt quá trình train
+    # Đây là kỹ thuật hiệu quả nhất để mô hình tìm được điểm tối ưu toàn cục thay vì bị kẹt ở cục bộ
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
+    
     # Scaler cho Mixed Precision
     scaler = GradScaler()
     
@@ -200,6 +204,11 @@ def main():
     print("STARTING TRAINING...")
     for epoch in range(start_epoch, args.epochs + 1):
         train_one_epoch(model, train_loader, optimizer, criterion, scaler, device, epoch, max_batches=args.max_batches)
+        
+        # Bước Scheduler sau mỗi Epoch (Giảm LR theo hình Cosine)
+        scheduler.step()
+        current_lr = optimizer.param_groups[0]['lr']
+        print(f"Learning Rate sau Epoch {epoch}: {current_lr:.2e}", flush=True)
         
         # Lưu Checkpoint NGAY SAU KHI TRAIN xong (Phòng hờ lúc Validation bị sập RAM thì vẫn giữ được tiến độ)
         checkpoint_path = f"checkpoint_epoch_{epoch}.pth"
