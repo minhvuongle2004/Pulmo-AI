@@ -196,6 +196,13 @@ def main():
         checkpoint = torch.load(args.resume_checkpoint, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        # QUAN TRỌNG: Ghi đè LR bằng tham số --learning_rate mới truyền vào
+        # (optimizer.load_state_dict sẽ phục hồi LR cũ từ checkpoint, ta phải override thủ công)
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = args.learning_rate
+            param_group['initial_lr'] = args.learning_rate
+        print(f"Overriding LR to: {args.learning_rate:.2e} (from --learning_rate argument)")
         start_epoch = checkpoint['epoch'] + 1
         best_val_auc = checkpoint.get('val_auc', 0.0)
         print(f"Loaded successfully. Will start from epoch {start_epoch}")
